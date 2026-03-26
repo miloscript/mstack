@@ -38,7 +38,7 @@ export default {
         implementation: "implementation.md",
       },
       pre: [],
-      post: ["human"],
+      post: [],
     },
 
     test: {
@@ -61,7 +61,7 @@ export default {
       enabled: true,
       skill: "ship",
       input: "implementation.md",
-      pre: ["human"],
+      pre: [],
       post: [],
     },
   },

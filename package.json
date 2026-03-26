@@ -2,7 +2,11 @@
   "name": "mstack",
   "version": "0.1.0",
   "description": "Config-driven agentic dev workflow CLI built on Claude Code",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "bin": {
     "mstack": "./dist/bin/mstack.js"
   },
