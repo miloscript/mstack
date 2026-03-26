@@ -1,12 +1,43 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as readline from "node:readline";
 import type { MstackConfig } from "./types.js";
 import { loadConfig } from "./config.js";
 
 /**
+ * Prompt the user for multi-line input via readline.
+ * Ends when the user presses Enter on an empty line.
+ */
+function promptUser(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    const lines: string[] = [];
+
+    console.log(question);
+    console.log("  (Press Enter twice to finish)\n");
+
+    rl.on("line", (line) => {
+      if (line === "" && lines.length > 0) {
+        rl.close();
+      } else {
+        lines.push(line);
+      }
+    });
+
+    rl.on("close", () => {
+      resolve(lines.join("\n"));
+    });
+  });
+}
+
+/**
  * Runs the `mstack mistake` flow:
- * 1. Lists recent workflows for context
- * 2. Spawns an interactive agent that asks the user to describe the mistake
+ * 1. Collects the mistake description from the user via readline
+ * 2. Spawns a headless agent to analyse and format the mistake
  * 3. Appends a structured entry to .mstack/knowledge/mistakes.md
  */
 export async function recordMistake(
@@ -28,6 +59,21 @@ export async function recordMistake(
   }
 
   const skill = fs.readFileSync(skillPath, "utf8");
+
+  console.log("\n📝 mstack mistake — recording a mistake for future consideration\n");
+
+  // Collect user input directly via readline — no agent timeout issues
+  const userDescription = await promptUser(
+    "Describe the mistake you observed.\n" +
+    "  What happened? Why was it wrong? What should have been done instead?",
+  );
+
+  if (!userDescription.trim()) {
+    console.log("No mistake description provided. Aborting.");
+    return;
+  }
+
+  console.log("\nAnalysing and recording...\n");
 
   // Build context: include recent workflow summary and/or specific workflow
   let workflowContext = "";
@@ -78,13 +124,15 @@ You have access to:
 - The mstack knowledge directory: ${knowledgeDir}
 ${workflowContext}${currentMistakes}
 
+## User's Mistake Description
+
+${userDescription}
+
 ## Instructions
 
-Use AskUserQuestion to ask the user to describe the mistake they observed.
-Then analyse the mistake in context of recent workflow outputs and append a well-structured entry to ${mistakesFile}.
+The user has already described the mistake above. Do NOT ask the user any questions.
+Analyse the mistake in context of recent workflow outputs and append a well-structured entry to ${mistakesFile}.
 `;
-
-  console.log("\n📝 mstack mistake — recording a mistake for future consideration\n");
 
   const conversation = query({
     prompt,
@@ -92,6 +140,7 @@ Then analyse the mistake in context of recent workflow outputs and append a well
       cwd,
       model: config.model,
       permissionMode: config.permissionMode || "acceptEdits",
+      disallowedTools: ["AskUserQuestion"],
       includePartialMessages: true,
     },
   });
