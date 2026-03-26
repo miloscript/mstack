@@ -11,6 +11,13 @@ export interface MstackConfig {
   /** Orchestration mode: who drives the phase loop */
   orchestration: "prompt" | "code" | "interactive";
 
+  /** Permission mode for Claude Code tool approvals — default "acceptEdits"
+   *  - "default": prompt user for each tool (interactive approval)
+   *  - "acceptEdits": auto-approve file operations (Edit, Write, Bash writes)
+   *  - "bypassPermissions": auto-approve ALL tools (use with caution)
+   */
+  permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+
   /** Phase definitions — order of keys determines execution order */
   phases: Record<string, PhaseConfig>;
 
@@ -65,4 +72,7 @@ export interface PhaseConfig {
   /** Allowed tools for this phase (v1: prompt-level enforcement only)
    *  e.g. ["Read", "Glob", "Grep", "Bash"] */
   tools?: string[];
+
+  /** Per-phase permission mode override */
+  permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
 }

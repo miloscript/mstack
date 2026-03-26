@@ -15,6 +15,7 @@ const CONFIG_DEFAULTS: Partial<MstackConfig> = {
   outputDir: ".mstack/",
   model: "claude-sonnet-4-6",
   orchestration: "code",
+  permissionMode: "acceptEdits",
   maxRetries: 2,
   tdd: { enabled: true },
 };

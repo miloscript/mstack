@@ -28,15 +28,36 @@ export async function runPromptMode(
       systemPrompt,
       cwd: process.cwd(),
       model: config.model,
+      permissionMode: config.permissionMode || "acceptEdits",
     },
   });
 
   for await (const message of conversation) {
-    // Consume the stream — prompt mode is conversational
-    if (message.type === "result") {
-      const msg = message as { type: string; is_error?: boolean; error?: string };
-      if (msg.is_error) {
-        console.error(`Workflow error: ${msg.error}`);
+    switch (message.type) {
+      case "assistant": {
+        const assistantMsg = message as { type: string; content?: Array<{ type: string; text?: string; name?: string }> };
+        for (const block of assistantMsg.content || []) {
+          if (block.type === "text" && block.text) {
+            process.stdout.write(block.text);
+          } else if (block.type === "tool_use" && block.name) {
+            console.log(`\n  🔧 ${block.name}`);
+          }
+        }
+        break;
+      }
+      case "tool_use_summary": {
+        const summary = message as { type: string; tool_name?: string; summary?: string };
+        if (summary.summary) {
+          console.log(`  ↳ ${summary.tool_name}: ${summary.summary}`);
+        }
+        break;
+      }
+      case "result": {
+        const msg = message as { type: string; is_error?: boolean; error?: string };
+        if (msg.is_error) {
+          console.error(`Workflow error: ${msg.error}`);
+        }
+        break;
       }
     }
   }

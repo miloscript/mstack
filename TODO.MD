@@ -1,0 +1,3 @@
+- both modes run the same, without any claude session actually. 
+- both modes can't be exited.
+- when ran both modes don't have permissions, so there's no output.

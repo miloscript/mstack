@@ -11,6 +11,14 @@ declare module "@anthropic-ai/claude-agent-sdk" {
       append?: string;
     };
     maxTurns?: number;
+    /** Permission mode for tool approvals:
+     *  - "default": prompt user for each tool (SDK default)
+     *  - "acceptEdits": auto-approve file operations (Edit, Write, Bash writes)
+     *  - "bypassPermissions": auto-approve ALL tools (requires allowDangerouslySkipPermissions)
+     */
+    permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+    /** Required safety flag when using permissionMode: "bypassPermissions" */
+    allowDangerouslySkipPermissions?: boolean;
   }
 
   interface SDKResultSuccess {
@@ -33,10 +41,43 @@ declare module "@anthropic-ai/claude-agent-sdk" {
 
   type SDKResultMessage = SDKResultSuccess | SDKResultError;
 
-  interface SDKMessage {
-    type: string;
+  interface SDKAssistantMessage {
+    type: "assistant";
+    content: Array<{
+      type: "text" | "tool_use";
+      text?: string;
+      name?: string;
+      input?: unknown;
+    }>;
     [key: string]: unknown;
   }
+
+  interface SDKToolUseSummaryMessage {
+    type: "tool_use_summary";
+    tool_name: string;
+    summary: string;
+    [key: string]: unknown;
+  }
+
+  interface SDKStatusMessage {
+    type: "status";
+    message: string;
+    [key: string]: unknown;
+  }
+
+  interface SDKSystemMessage {
+    type: "system";
+    subtype: "init" | "compact_boundary";
+    [key: string]: unknown;
+  }
+
+  type SDKMessage =
+    | SDKResultMessage
+    | SDKAssistantMessage
+    | SDKToolUseSummaryMessage
+    | SDKStatusMessage
+    | SDKSystemMessage
+    | { type: string; [key: string]: unknown };
 
   interface Query extends AsyncGenerator<SDKMessage, void> {
     interrupt(): Promise<void>;

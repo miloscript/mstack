@@ -181,18 +181,40 @@ export async function runAgent(
       cwd: process.cwd(),
       model: phaseConfig.model || config.model,
       allowedTools: phaseConfig.tools,
+      permissionMode: phaseConfig.permissionMode || config.permissionMode || "acceptEdits",
     },
   });
 
   let resultText = "";
 
   for await (const message of conversation) {
-    if (message.type === "result") {
-      const msg = message as { type: string; subtype?: string; result?: string; error?: string; is_error?: boolean };
-      if (msg.is_error) {
-        throw new Error(msg.error || "Agent returned an error");
+    switch (message.type) {
+      case "assistant": {
+        const assistantMsg = message as { type: string; content?: Array<{ type: string; text?: string; name?: string }> };
+        for (const block of assistantMsg.content || []) {
+          if (block.type === "text" && block.text) {
+            process.stdout.write(block.text);
+          } else if (block.type === "tool_use" && block.name) {
+            console.log(`\n  🔧 ${block.name}`);
+          }
+        }
+        break;
       }
-      resultText = msg.result || "";
+      case "tool_use_summary": {
+        const summary = message as { type: string; tool_name?: string; summary?: string };
+        if (summary.summary) {
+          console.log(`  ↳ ${summary.tool_name}: ${summary.summary}`);
+        }
+        break;
+      }
+      case "result": {
+        const msg = message as { type: string; subtype?: string; result?: string; error?: string; is_error?: boolean };
+        if (msg.is_error) {
+          throw new Error(msg.error || "Agent returned an error");
+        }
+        resultText = msg.result || "";
+        break;
+      }
     }
   }
 

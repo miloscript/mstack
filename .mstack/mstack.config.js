@@ -3,6 +3,7 @@ export default {
   outputDir: ".mstack/",
   model: "claude-sonnet-4-6",
   orchestration: "code",
+  permissionMode: "acceptEdits",
 
   phases: {
     analysis: {
