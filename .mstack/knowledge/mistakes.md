@@ -1,0 +1,9 @@
+# Mistakes
+
+<!-- Entries are added by the review phase when issues are found.
+     Format:
+     ## YYYY-MM-DD: Brief description
+     - **What happened:** ...
+     - **Root cause:** ...
+     - **Prevention:** ...
+-->
