@@ -226,6 +226,121 @@ describe("resolveInputs", () => {
     const result = resolveInputs("nonexistent.md", tmpDir);
     expect(result).toEqual({});
   });
+
+  it("falls back to numbered file when exact path not found (string input)", () => {
+    // Config says "analysis.md" but file on disk is "01-analysis.md"
+    fs.writeFileSync(path.join(tmpDir, "01-analysis.md"), "Numbered analysis output");
+
+    const result = resolveInputs("analysis.md", tmpDir);
+    expect(result).toEqual({ "analysis.md": "Numbered analysis output" });
+  });
+
+  it("falls back to numbered file for record inputs", () => {
+    fs.writeFileSync(path.join(tmpDir, "02-plan.md"), "Numbered plan output");
+
+    const result = resolveInputs({ plan: "plan.md" }, tmpDir);
+    expect(result).toEqual({ plan: "Numbered plan output" });
+  });
+
+  it("prefers exact path over numbered fallback", () => {
+    fs.writeFileSync(path.join(tmpDir, "analysis.md"), "Exact match");
+    fs.writeFileSync(path.join(tmpDir, "01-analysis.md"), "Numbered");
+
+    const result = resolveInputs("analysis.md", tmpDir);
+    expect(result).toEqual({ "analysis.md": "Exact match" });
+  });
+});
+
+describe("assemblePrompt with initial-user-input.md", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(
+      path.join(import.meta.dirname, ".tmp-spec-"),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const baseConfig: MstackConfig = {
+    name: "test",
+    outputDir: ".mstack/",
+    model: "claude-sonnet-4-6",
+    orchestration: "code",
+    phases: {},
+    maxRetries: 2,
+    tdd: { enabled: true },
+  };
+
+  it("includes initial-user-input.md content if present in workflowDir", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "initial-user-input.md"),
+      "This is the original spec content",
+    );
+
+    const result = assemblePrompt({
+      universal: "Universal",
+      skill: "Skill",
+      inputs: {},
+      knowledge: {},
+      userTask: "short task title",
+      phaseName: "implementation",
+      workflowDir: tmpDir,
+      config: baseConfig,
+    });
+
+    expect(result).toContain("initial-user-input.md");
+    expect(result).toContain("This is the original spec content");
+  });
+
+  it("does not include spec section when initial-user-input.md does not exist", () => {
+    const result = assemblePrompt({
+      universal: "Universal",
+      skill: "Skill",
+      inputs: {},
+      knowledge: {},
+      userTask: "task",
+      phaseName: "analysis",
+      workflowDir: tmpDir,
+      config: baseConfig,
+    });
+
+    expect(result).not.toContain("initial-user-input.md");
+  });
+
+  it("includes phaseIndex in output path metadata when provided", () => {
+    const result = assemblePrompt({
+      universal: "Universal",
+      skill: "Skill",
+      inputs: {},
+      knowledge: {},
+      userTask: "task",
+      phaseName: "analysis",
+      workflowDir: tmpDir,
+      config: baseConfig,
+      phaseIndex: 1,
+    });
+
+    expect(result).toContain("01-analysis.md");
+  });
+
+  it("uses plain filename in output path when phaseIndex not provided", () => {
+    const result = assemblePrompt({
+      universal: "Universal",
+      skill: "Skill",
+      inputs: {},
+      knowledge: {},
+      userTask: "task",
+      phaseName: "analysis",
+      workflowDir: tmpDir,
+      config: baseConfig,
+    });
+
+    expect(result).toContain("analysis.md");
+    expect(result).not.toContain("01-analysis.md");
+  });
 });
 
 describe("loadKnowledge", () => {

@@ -16,6 +16,18 @@ import {
   getCompletedPhases,
 } from "../utils/workflow-manager.js";
 import { humanCheckpoint } from "../utils/human-checkpoint.js";
+import { PermissionError } from "../utils/permission-error.js";
+import { ensurePermissions } from "../utils/permissions.js";
+import {
+  createSpinner,
+  formatPhaseHeader,
+  printPhaseComplete,
+  printPhaseFailed,
+  printPhaseSkipped,
+  printWorkflowSummary,
+  printPermissionError,
+  printRetry,
+} from "../utils/ui.js";
 import { runAgent, isHumanAttended } from "./code.js";
 
 /**
@@ -30,8 +42,9 @@ export async function runInteractivePhase(
   workflowDir: string,
   universal: string,
   userFeedback: Record<string, string>,
+  phaseIndex?: number,
 ): Promise<void> {
-  console.log(`\n▶ Starting ${phaseName} phase (interactive)...`);
+  console.log(formatPhaseHeader(phaseName, true));
 
   // Pre-hooks
   await runInteractiveHooks(
@@ -56,30 +69,64 @@ export async function runInteractivePhase(
     workflowDir,
     config,
     humanAttended,
+    phaseIndex,
   });
 
   let result: string | null = null;
   let lastError: string | null = null;
+  const startTime = Date.now();
 
   for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
+    if (attempt > 0) {
+      printRetry(phaseName, attempt, config.maxRetries);
+    }
+
+    updateWorkflowStatus(
+      workflowDir,
+      phaseName,
+      attempt > 0 ? `retry-${attempt}` : "in-progress",
+      phaseConfig.model || config.model,
+    );
+
+    const spinner = createSpinner(`Running ${phaseName}...`);
+    spinner.start();
+
     try {
-      if (attempt > 0) {
-        console.log(
-          `  ↻ Retry ${attempt}/${config.maxRetries} for ${phaseName}...`,
-        );
-      }
-
-      updateWorkflowStatus(
-        workflowDir,
-        phaseName,
-        attempt > 0 ? `retry-${attempt}` : "in-progress",
-        phaseConfig.model || config.model,
+      result = await runAgent(
+        prompt,
+        phaseConfig,
+        config,
+        isHumanAttended(phaseConfig),
+        spinner,
       );
-
-      result = await runAgent(prompt, phaseConfig, config, isHumanAttended(phaseConfig));
       lastError = null;
       break;
     } catch (err) {
+      spinner.stop();
+
+      // Permission errors must not be retried — exit immediately
+      if (err instanceof PermissionError) {
+        const errMsg = err.message;
+        writeErrorOutput(
+          workflowDir,
+          phaseName,
+          `Permission error: ${errMsg}`,
+          phaseConfig,
+          userTask,
+          phaseIndex,
+        );
+        updateWorkflowStatus(
+          workflowDir,
+          phaseName,
+          "failed",
+          phaseConfig.model || config.model,
+        );
+        updateWorkflowFinalStatus(workflowDir, "permission-error");
+        ensurePermissions(config.permissions || []);
+        printPermissionError(phaseName, errMsg);
+        return;
+      }
+
       lastError = err instanceof Error ? err.message : String(err);
       console.log(
         `  ✗ ${phaseName} failed${attempt < config.maxRetries ? ", retrying..." : ""}`,
@@ -94,6 +141,7 @@ export async function runInteractivePhase(
       `Phase failed after ${config.maxRetries + 1} attempts.\n\nLast error: ${lastError}`,
       phaseConfig,
       userTask,
+      phaseIndex,
     );
     updateWorkflowStatus(
       workflowDir,
@@ -102,9 +150,7 @@ export async function runInteractivePhase(
       phaseConfig.model || config.model,
     );
     updateWorkflowFinalStatus(workflowDir, "failed");
-    console.log(
-      `\n✗ Workflow stopped: ${phaseName} phase failed after ${config.maxRetries + 1} attempts.`,
-    );
+    printPhaseFailed(phaseName, config.maxRetries + 1);
     return;
   }
 
@@ -115,6 +161,7 @@ export async function runInteractivePhase(
     phaseConfig,
     userTask,
     userFeedback,
+    phaseIndex,
   );
   updateWorkflowStatus(
     workflowDir,
@@ -123,7 +170,7 @@ export async function runInteractivePhase(
     phaseConfig.model || config.model,
   );
 
-  console.log(`  ✓ ${phaseName} complete`);
+  printPhaseComplete(phaseName, Date.now() - startTime);
 
   // Post-hooks
   await runInteractiveHooks(
@@ -151,10 +198,24 @@ export async function runInteractiveMode(
   const completedPhases = getCompletedPhases(workflowDir);
   const userFeedback: Record<string, string> = {};
 
-  for (const [phaseName, phaseConfig] of enabledPhases) {
+  // Determine the last phase name for shipping-state logic
+  const lastPhaseName =
+    enabledPhases.length > 0
+      ? enabledPhases[enabledPhases.length - 1][0]
+      : null;
+
+  for (let i = 0; i < enabledPhases.length; i++) {
+    const [phaseName, phaseConfig] = enabledPhases[i];
+    const phaseIndex = i + 1;
+
     if (completedPhases.includes(phaseName)) {
-      console.log(`⏭  Skipping ${phaseName} (already complete)`);
+      printPhaseSkipped(phaseName);
       continue;
+    }
+
+    // Mark workflow as "shipping" just before the last phase executes
+    if (phaseName === lastPhaseName) {
+      updateWorkflowFinalStatus(workflowDir, "shipping");
     }
 
     await runInteractivePhase(
@@ -165,6 +226,7 @@ export async function runInteractiveMode(
       workflowDir,
       universal,
       userFeedback,
+      phaseIndex,
     );
   }
 
@@ -200,23 +262,11 @@ async function runInteractiveHooks(
         execSync(hook, { cwd: process.cwd(), stdio: "inherit" });
       } catch (err) {
         console.log(
-          `  ⚠ Hook "${hook}" failed: ${err instanceof Error ? err.message : String(err)}`,
+          `  ⚠ Hook "${hook}" failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
         );
       }
     }
   }
-}
-
-function printWorkflowSummary(workflowDir: string): void {
-  console.log("\n" + "=".repeat(60));
-  console.log("  Workflow complete!");
-  console.log("=".repeat(60));
-  console.log(`\n  Output: ${workflowDir}`);
-
-  const files = fs.readdirSync(workflowDir).filter((f) => f.endsWith(".md"));
-  console.log(`  Phase outputs: ${files.length} documents`);
-  for (const f of files) {
-    console.log(`    - ${f}`);
-  }
-  console.log("");
 }

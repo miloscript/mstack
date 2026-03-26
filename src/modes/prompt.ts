@@ -2,6 +2,8 @@ import * as fs from "node:fs";
 import type { MstackConfig } from "../types.js";
 import { resolveSkillPath, resolvePromptPath } from "../utils/prompt-assembler.js";
 import { formatToolSummary, isHumanAttended } from "./code.js";
+import { isPermissionError } from "../utils/permission-error.js";
+import { printPermissionError } from "../utils/ui.js";
 
 export async function runPromptMode(
   config: MstackConfig,
@@ -41,27 +43,44 @@ export async function runPromptMode(
   });
 
   const toolState = new Map<string, { tool: string; input: string }>();
+  let resultText = "";
 
   for await (const message of conversation) {
     switch (message.type) {
       case "stream_event": {
-        const streamMsg = message as import("@anthropic-ai/claude-agent-sdk").SDKStreamEvent;
+        const streamMsg =
+          message as import("@anthropic-ai/claude-agent-sdk").SDKStreamEvent;
         const event = streamMsg.event;
         const contextKey = streamMsg.parent_tool_use_id || "root";
         const isNested = streamMsg.parent_tool_use_id !== null;
         const indent = isNested ? "    " : "  ";
 
-        if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
+        if (
+          event.type === "content_block_delta" &&
+          event.delta?.type === "text_delta" &&
+          event.delta.text
+        ) {
           if (!isNested) {
             process.stdout.write(event.delta.text);
           }
-        } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta" && event.delta.partial_json) {
+        } else if (
+          event.type === "content_block_delta" &&
+          event.delta?.type === "input_json_delta" &&
+          event.delta.partial_json
+        ) {
           const state = toolState.get(contextKey);
           if (state) {
             state.input += event.delta.partial_json;
           }
-        } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use" && event.content_block.name) {
-          toolState.set(contextKey, { tool: event.content_block.name, input: "" });
+        } else if (
+          event.type === "content_block_start" &&
+          event.content_block?.type === "tool_use" &&
+          event.content_block.name
+        ) {
+          toolState.set(contextKey, {
+            tool: event.content_block.name,
+            input: "",
+          });
         } else if (event.type === "content_block_stop") {
           const state = toolState.get(contextKey);
           if (state) {
@@ -73,12 +92,25 @@ export async function runPromptMode(
         break;
       }
       case "result": {
-        const msg = message as { type: string; is_error?: boolean; error?: string };
+        const msg = message as {
+          type: string;
+          is_error?: boolean;
+          error?: string;
+          result?: string;
+        };
         if (msg.is_error) {
           console.error(`Workflow error: ${msg.error}`);
+        } else {
+          resultText = msg.result || "";
         }
         break;
       }
     }
+  }
+
+  // Detect permission errors in the final result
+  if (resultText && isPermissionError(resultText)) {
+    printPermissionError("prompt-mode", resultText.substring(0, 500));
+    process.exit(1);
   }
 }

@@ -1,0 +1,28 @@
+# Source files (TypeScript)
+src/
+tests/
+bin/*.ts
+
+# Dev config
+.github/
+.husky/
+.mstack/
+vitest.config.ts
+tsconfig.json
+.commitlintrc.json
+*.md
+!README.md
+
+# Dev artifacts
+*.tgz
+.tmp*
+coverage/
+
+# Node
+node_modules/
+
+# Misc
+spec.md
+THOUGHTS.MD
+TODO.MD
+0.1.md

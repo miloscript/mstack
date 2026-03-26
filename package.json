@@ -10,23 +10,52 @@
   "bin": {
     "mstack": "./dist/bin/mstack.js"
   },
+  "main": "./dist/src/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    }
+  },
+  "types": "./dist/src/index.d.ts",
   "files": [
     "dist/",
     "defaults/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miloscript/mstack.git"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "claude",
+    "workflow",
+    "cli",
+    "agentic"
   ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest",
+    "test:run": "vitest run",
     "test:cov": "vitest --coverage",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && npm run test:run",
+    "prepare": "husky || true"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.84",
     "commander": "^12.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
     "@types/node": "^22",
+    "husky": "^9.0.0",
+    "semantic-release": "^24.0.0",
+    "@semantic-release/changelog": "^6.0.0",
+    "@semantic-release/git": "^10.0.0",
+    "@semantic-release/github": "^10.0.0",
     "typescript": "^5.4",
     "vitest": "^2.0"
   }

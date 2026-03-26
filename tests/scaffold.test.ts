@@ -59,6 +59,9 @@ describe("scaffold", () => {
     expect(
       fs.existsSync(path.join(tmpDir, ".mstack", "skills", "ship.md")),
     ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".mstack", "skills", "mistake.md")),
+    ).toBe(true);
   });
 
   it("copies universal prompt", async () => {

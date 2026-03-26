@@ -58,6 +58,18 @@ ${JSON.stringify(config, null, 2)}
   fs.writeFileSync(path.join(workflowDir, "workflow.md"), doc);
 }
 
+/**
+ * Writes the original user task to initial-user-input.md in the workflow dir.
+ * This file is a stable record of the user's original request and is
+ * auto-included in agent prompts so every phase has easy access to the spec.
+ */
+export function writeInitialUserInput(
+  workflowDir: string,
+  userTask: string,
+): void {
+  fs.writeFileSync(path.join(workflowDir, "initial-user-input.md"), userTask);
+}
+
 export function updateWorkflowStatus(
   workflowDir: string,
   phaseName: string,
@@ -79,12 +91,25 @@ export function updateWorkflowStatus(
 
 export function updateWorkflowFinalStatus(
   workflowDir: string,
-  status: "complete" | "failed",
+  status: "complete" | "failed" | "shipping" | "permission-error",
 ): void {
   const workflowPath = path.join(workflowDir, "workflow.md");
   let content = fs.readFileSync(workflowPath, "utf8");
-  content = content.replace(/status: in-progress/, `status: ${status}`);
-  content = content.replace(/completed:\s*$|completed:\s*(?=\n)/m, `completed: ${new Date().toISOString()}`);
+
+  // Replace whatever the current status is (may be in-progress, shipping, etc.)
+  content = content.replace(
+    /^status: .+$/m,
+    `status: ${status}`,
+  );
+
+  // Stamp completed timestamp for terminal states only
+  if (status === "complete" || status === "failed" || status === "permission-error") {
+    content = content.replace(
+      /completed:\s*$|completed:\s*(?=\n)/m,
+      `completed: ${new Date().toISOString()}`,
+    );
+  }
+
   fs.writeFileSync(workflowPath, content);
 }
 
@@ -104,11 +129,24 @@ export function recordUserInput(
   fs.writeFileSync(workflowPath, content);
 }
 
+/**
+ * Returns the list of phase names that have already been completed.
+ *
+ * Handles both legacy filenames (e.g. `analysis.md`) and numbered filenames
+ * (e.g. `01-analysis.md`) introduced in mstack v0.2+. Also excludes
+ * workflow.md and initial-user-input.md which are metadata files, not phase outputs.
+ */
 export function getCompletedPhases(workflowDir: string): string[] {
+  const EXCLUDED = new Set(["workflow.md", "initial-user-input.md"]);
+
   const files = fs.readdirSync(workflowDir);
   return files
-    .filter((f) => f.endsWith(".md") && f !== "workflow.md")
-    .map((f) => f.replace(".md", ""));
+    .filter((f) => f.endsWith(".md") && !EXCLUDED.has(f))
+    .map((f) => {
+      const name = f.replace(/\.md$/, "");
+      // Strip leading numeric prefix, e.g. "01-analysis" → "analysis"
+      return name.replace(/^\d+-/, "");
+    });
 }
 
 export function extractUserTask(workflowMd: string): string {

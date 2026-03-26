@@ -72,13 +72,13 @@ describe("runner dispatch", () => {
 
     await run(config, "test task", workflowDir);
 
-    // Should have created analysis.md output
+    // Phase outputs are now numbered: first phase → 01-analysis.md
     expect(
-      fs.existsSync(path.join(workflowDir, "analysis.md")),
+      fs.existsSync(path.join(workflowDir, "01-analysis.md")),
     ).toBe(true);
 
     const output = fs.readFileSync(
-      path.join(workflowDir, "analysis.md"),
+      path.join(workflowDir, "01-analysis.md"),
       "utf8",
     );
     expect(output).toContain("Mock agent output");
@@ -122,13 +122,16 @@ describe("runner dispatch", () => {
 
     await run(config, "test skip", workflowDir);
 
-    // analysis should NOT exist
+    // analysis is disabled, should NOT exist (neither numbered nor un-numbered)
     expect(
       fs.existsSync(path.join(workflowDir, "analysis.md")),
     ).toBe(false);
-    // plan should exist
     expect(
-      fs.existsSync(path.join(workflowDir, "plan.md")),
+      fs.existsSync(path.join(workflowDir, "01-analysis.md")),
+    ).toBe(false);
+    // plan is the first enabled phase → 01-plan.md
+    expect(
+      fs.existsSync(path.join(workflowDir, "01-plan.md")),
     ).toBe(true);
   });
 

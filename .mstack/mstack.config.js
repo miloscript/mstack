@@ -50,7 +50,7 @@ export default {
     },
 
     document: {
-      enabled: false,
+      enabled: true,
       skill: "document",
       input: "implementation.md",
       pre: [],

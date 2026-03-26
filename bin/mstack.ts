@@ -9,12 +9,26 @@ import { run } from "../src/runner.js";
 import { resume } from "../src/resume.js";
 import { printStatus } from "../src/status.js";
 import { createSkill } from "../src/skill-builder.js";
+import { recordMistake } from "../src/mistake.js";
 import {
   generateSlug,
   createWorkflowDir,
   writeWorkflowRoot,
+  writeInitialUserInput,
   resolveRunInput,
 } from "../src/utils/workflow-manager.js";
+
+// ── SIGINT / CTRL+C handler ───────────────────────────────────────────────────
+// Without this handler, CTRL+C only logs text when readline is active.
+// We install it at process level so all code paths see a clean exit.
+process.on("SIGINT", () => {
+  // Print a blank line so the shell prompt appears on a fresh line
+  process.stdout.write("\n");
+  console.log("Exiting mstack (interrupted by user).");
+  process.exit(0);
+});
+
+// ── CLI setup ─────────────────────────────────────────────────────────────────
 
 const program = new Command();
 
@@ -49,7 +63,10 @@ program
     "Override orchestration mode (prompt|code|interactive)",
   )
   .option("--config <path>", "Path to config file")
-  .option("-f, --file <path>", "Path to a spec file whose contents will be used as the task prompt")
+  .option(
+    "-f, --file <path>",
+    "Path to a spec file whose contents will be used as the task prompt",
+  )
   .action(async (task: string | undefined, opts) => {
     try {
       const config = await loadConfig(opts.config);
@@ -68,9 +85,12 @@ program
       const workflowDir = createWorkflowDir(config, slug);
       writeWorkflowRoot(workflowDir, config, userTask, title);
 
+      // Always write the original user task as a stable spec file in the workflow dir
+      writeInitialUserInput(workflowDir, userTask);
+
       console.log(`Workflow: ${slug}`);
-      console.log(`Mode: ${config.orchestration}`);
-      console.log(`Output: ${workflowDir}\n`);
+      console.log(`Mode:     ${config.orchestration}`);
+      console.log(`Output:   ${workflowDir}\n`);
 
       await run(config, userTask, workflowDir);
     } catch (err) {
@@ -120,6 +140,27 @@ program
     try {
       const config = await loadConfig();
       await createSkill(config, name);
+    } catch (err) {
+      console.error(
+        `Error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("mistake")
+  .description(
+    "Record a mistake for future workflows — prompts you to describe what went wrong, then appends it to .mstack/knowledge/mistakes.md",
+  )
+  .option(
+    "--workflow <slug>",
+    "Workflow slug to use as context (e.g. 2026-03-26-add-auth)",
+  )
+  .action(async (opts) => {
+    try {
+      const config = await loadConfig();
+      await recordMistake(config, opts.workflow);
     } catch (err) {
       console.error(
         `Error: ${err instanceof Error ? err.message : String(err)}`,

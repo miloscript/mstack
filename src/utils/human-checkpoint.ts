@@ -10,6 +10,13 @@ export async function humanCheckpoint(
     output: process.stdout,
   });
 
+  // Allow CTRL+C to exit cleanly during an interactive checkpoint
+  rl.on("SIGINT", () => {
+    rl.close();
+    console.log("\n\nExiting mstack (interrupted by user).");
+    process.exit(0);
+  });
+
   const prompt =
     type === "pre"
       ? `\n📋 [${phaseName}] About to start. ${context}\n\nProceed? (Enter to continue, or type feedback): `

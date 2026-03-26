@@ -16,6 +16,22 @@ import {
   getCompletedPhases,
 } from "../utils/workflow-manager.js";
 import { humanCheckpoint } from "../utils/human-checkpoint.js";
+import {
+  PermissionError,
+  isPermissionError,
+} from "../utils/permission-error.js";
+import { ensurePermissions } from "../utils/permissions.js";
+import {
+  createSpinner,
+  formatPhaseHeader,
+  printPhaseComplete,
+  printPhaseFailed,
+  printPhaseSkipped,
+  printWorkflowSummary,
+  printPermissionError,
+  printRetry,
+  type Spinner,
+} from "../utils/ui.js";
 import { runInteractivePhase } from "./interactive.js";
 
 export function isHumanAttended(phaseConfig: PhaseConfig): boolean {
@@ -38,11 +54,25 @@ export async function runCodeMode(
   const completedPhases = getCompletedPhases(workflowDir);
   const userFeedback: Record<string, string> = {};
 
-  for (const [phaseName, phaseConfig] of enabledPhases) {
+  // Determine the last phase name for shipping-state logic
+  const lastPhaseName =
+    enabledPhases.length > 0
+      ? enabledPhases[enabledPhases.length - 1][0]
+      : null;
+
+  for (let i = 0; i < enabledPhases.length; i++) {
+    const [phaseName, phaseConfig] = enabledPhases[i];
+    const phaseIndex = i + 1; // 1-based, used for file naming
+
     // Skip already completed phases (resume support)
     if (completedPhases.includes(phaseName)) {
-      console.log(`⏭  Skipping ${phaseName} (already complete)`);
+      printPhaseSkipped(phaseName);
       continue;
+    }
+
+    // Mark workflow as "shipping" just before the last phase executes
+    if (phaseName === lastPhaseName) {
+      updateWorkflowFinalStatus(workflowDir, "shipping");
     }
 
     // Resolve per-phase orchestration override
@@ -56,11 +86,12 @@ export async function runCodeMode(
         workflowDir,
         universal,
         userFeedback,
+        phaseIndex,
       );
       continue;
     }
 
-    console.log(`\n▶ Starting ${phaseName} phase...`);
+    console.log(formatPhaseHeader(phaseName, false));
 
     // Pre-hooks
     await runHooks(
@@ -86,33 +117,60 @@ export async function runCodeMode(
       workflowDir,
       config,
       humanAttended,
+      phaseIndex,
     });
 
     // Spawn headless agent with retries
     let result: string | null = null;
     let lastError: string | null = null;
+    const startTime = Date.now();
 
     for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
+      if (attempt > 0) {
+        printRetry(phaseName, attempt, config.maxRetries);
+      }
+
+      updateWorkflowStatus(
+        workflowDir,
+        phaseName,
+        attempt > 0 ? `retry-${attempt}` : "in-progress",
+        phaseConfig.model || config.model,
+      );
+
+      const spinner = createSpinner(`Running ${phaseName}...`);
+      spinner.start();
+
       try {
-        if (attempt > 0) {
-          console.log(
-            `  ↻ Retry ${attempt}/${config.maxRetries} for ${phaseName}...`,
-          );
-        }
-
-        updateWorkflowStatus(
-          workflowDir,
-          phaseName,
-          attempt > 0 ? `retry-${attempt}` : "in-progress",
-          phaseConfig.model || config.model,
-        );
-
-        result = await runAgent(prompt, phaseConfig, config, humanAttended);
+        result = await runAgent(prompt, phaseConfig, config, humanAttended, spinner);
         lastError = null;
         break;
       } catch (err) {
-        lastError =
-          err instanceof Error ? err.message : String(err);
+        spinner.stop();
+
+        // Permission errors must not be retried — exit immediately
+        if (err instanceof PermissionError) {
+          const errMsg = err.message;
+          writeErrorOutput(
+            workflowDir,
+            phaseName,
+            `Permission error: ${errMsg}`,
+            phaseConfig,
+            userTask,
+            phaseIndex,
+          );
+          updateWorkflowStatus(
+            workflowDir,
+            phaseName,
+            "failed",
+            phaseConfig.model || config.model,
+          );
+          updateWorkflowFinalStatus(workflowDir, "permission-error");
+          ensurePermissions(config.permissions || []);
+          printPermissionError(phaseName, errMsg);
+          return;
+        }
+
+        lastError = err instanceof Error ? err.message : String(err);
         console.log(
           `  ✗ ${phaseName} failed${attempt < config.maxRetries ? ", retrying..." : ""}`,
         );
@@ -127,6 +185,7 @@ export async function runCodeMode(
         `Phase failed after ${config.maxRetries + 1} attempts.\n\nLast error: ${lastError}`,
         phaseConfig,
         userTask,
+        phaseIndex,
       );
       updateWorkflowStatus(
         workflowDir,
@@ -135,9 +194,7 @@ export async function runCodeMode(
         phaseConfig.model || config.model,
       );
       updateWorkflowFinalStatus(workflowDir, "failed");
-      console.log(
-        `\n✗ Workflow stopped: ${phaseName} phase failed after ${config.maxRetries + 1} attempts.`,
-      );
+      printPhaseFailed(phaseName, config.maxRetries + 1);
       console.log(`  Error: ${lastError}`);
       console.log(
         `  Use \`mstack resume\` to retry after fixing the issue.`,
@@ -153,6 +210,7 @@ export async function runCodeMode(
       phaseConfig,
       userTask,
       userFeedback,
+      phaseIndex,
     );
     updateWorkflowStatus(
       workflowDir,
@@ -161,7 +219,7 @@ export async function runCodeMode(
       phaseConfig.model || config.model,
     );
 
-    console.log(`  ✓ ${phaseName} complete`);
+    printPhaseComplete(phaseName, Date.now() - startTime);
 
     // Post-hooks
     await runHooks(
@@ -182,6 +240,7 @@ export async function runAgent(
   phaseConfig: PhaseConfig,
   config: MstackConfig,
   humanAttended = false,
+  spinner?: Spinner,
 ): Promise<string> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
 
@@ -192,38 +251,68 @@ export async function runAgent(
       model: phaseConfig.model || config.model,
       allowedTools: phaseConfig.tools,
       disallowedTools: humanAttended ? undefined : ["AskUserQuestion"],
-      permissionMode: phaseConfig.permissionMode || config.permissionMode || "acceptEdits",
+      permissionMode:
+        phaseConfig.permissionMode ||
+        config.permissionMode ||
+        "acceptEdits",
       includePartialMessages: true,
     },
   });
 
   let resultText = "";
+  let firstOutput = true;
   // Track tool state per context (null = top-level, string = parent tool use id)
   const toolState = new Map<string, { tool: string; input: string }>();
 
   for await (const message of conversation) {
     switch (message.type) {
       case "stream_event": {
-        const streamMsg = message as import("@anthropic-ai/claude-agent-sdk").SDKStreamEvent;
+        const streamMsg =
+          message as import("@anthropic-ai/claude-agent-sdk").SDKStreamEvent;
         const event = streamMsg.event;
         const contextKey = streamMsg.parent_tool_use_id || "root";
         const isNested = streamMsg.parent_tool_use_id !== null;
         const indent = isNested ? "    " : "  ";
 
-        if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
+        if (
+          event.type === "content_block_delta" &&
+          event.delta?.type === "text_delta" &&
+          event.delta.text
+        ) {
           if (!isNested) {
+            // Stop spinner before first text output
+            if (firstOutput) {
+              spinner?.stop();
+              firstOutput = false;
+            }
             process.stdout.write(event.delta.text);
           }
-        } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta" && event.delta.partial_json) {
+        } else if (
+          event.type === "content_block_delta" &&
+          event.delta?.type === "input_json_delta" &&
+          event.delta.partial_json
+        ) {
           const state = toolState.get(contextKey);
           if (state) {
             state.input += event.delta.partial_json;
           }
-        } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use" && event.content_block.name) {
-          toolState.set(contextKey, { tool: event.content_block.name, input: "" });
+        } else if (
+          event.type === "content_block_start" &&
+          event.content_block?.type === "tool_use" &&
+          event.content_block.name
+        ) {
+          toolState.set(contextKey, {
+            tool: event.content_block.name,
+            input: "",
+          });
         } else if (event.type === "content_block_stop") {
           const state = toolState.get(contextKey);
           if (state) {
+            // Stop spinner before first tool output
+            if (firstOutput) {
+              spinner?.stop();
+              firstOutput = false;
+            }
             const summary = formatToolSummary(state.tool, state.input);
             console.log(`\n${indent}🔧 ${summary}`);
             toolState.delete(contextKey);
@@ -232,7 +321,13 @@ export async function runAgent(
         break;
       }
       case "result": {
-        const msg = message as { type: string; subtype?: string; result?: string; error?: string; is_error?: boolean };
+        const msg = message as {
+          type: string;
+          subtype?: string;
+          result?: string;
+          error?: string;
+          is_error?: boolean;
+        };
         if (msg.is_error) {
           throw new Error(msg.error || "Agent returned an error");
         }
@@ -242,8 +337,18 @@ export async function runAgent(
     }
   }
 
+  // Ensure spinner is cleared even if no output was produced
+  spinner?.stop();
+
   if (!resultText.trim()) {
     throw new Error("Agent produced no output");
+  }
+
+  // Detect permission errors in the final result text
+  if (isPermissionError(resultText)) {
+    throw new PermissionError(
+      resultText.substring(0, 500),
+    );
   }
 
   return resultText;
@@ -295,11 +400,17 @@ export function formatToolSummary(tool: string, rawInput: string): string {
       case "Edit":
         return `${tool} ${input.file_path}`;
       case "Bash":
-        return `${tool} $ ${input.command?.length > 80 ? input.command.slice(0, 80) + "…" : input.command}`;
+        return `${tool} $ ${
+          input.command?.length > 80
+            ? input.command.slice(0, 80) + "…"
+            : input.command
+        }`;
       case "Glob":
         return `${tool} ${input.pattern}`;
       case "Grep":
-        return `${tool} ${input.pattern}${input.path ? ` in ${input.path}` : ""}`;
+        return `${tool} ${input.pattern}${
+          input.path ? ` in ${input.path}` : ""
+        }`;
       case "Agent":
         return `${tool} ${input.description || "sub-agent"}`;
       default:
@@ -308,18 +419,4 @@ export function formatToolSummary(tool: string, rawInput: string): string {
   } catch {
     return tool;
   }
-}
-
-function printWorkflowSummary(workflowDir: string): void {
-  console.log("\n" + "=".repeat(60));
-  console.log("  Workflow complete!");
-  console.log("=".repeat(60));
-  console.log(`\n  Output: ${workflowDir}`);
-
-  const files = fs.readdirSync(workflowDir).filter((f) => f.endsWith(".md"));
-  console.log(`  Phase outputs: ${files.length} documents`);
-  for (const f of files) {
-    console.log(`    - ${f}`);
-  }
-  console.log("");
 }

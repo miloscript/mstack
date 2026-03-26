@@ -115,7 +115,8 @@ export async function scaffold(opts: ScaffoldOptions = {}): Promise<void> {
   console.log("Next steps:");
   console.log("  1. Edit .mstack/mstack.config.js to set your project name");
   console.log('  2. Run `mstack run "your task"` to start a workflow');
-  console.log("  3. Or use /mstack inside Claude Code");
+  console.log("  3. Run `mstack mistake` after any workflow to record observations");
+  console.log("  4. Or use /mstack inside Claude Code");
 
   // Run init phase scan
   console.log("");

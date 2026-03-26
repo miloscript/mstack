@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { MstackConfig, PhaseConfig } from "../types.js";
+import { phaseFileName } from "./output-writer.js";
 
 export interface AssemblePromptParams {
   universal: string;
@@ -12,6 +13,8 @@ export interface AssemblePromptParams {
   workflowDir: string;
   config: MstackConfig;
   humanAttended?: boolean;
+  /** 1-based position in the phase execution order; used to build the output path. */
+  phaseIndex?: number;
 }
 
 export function assemblePrompt(params: AssemblePromptParams): string {
@@ -34,9 +37,21 @@ export function assemblePrompt(params: AssemblePromptParams): string {
   sections.push(params.skill);
 
   // 3. Input documents
-  if (Object.keys(params.inputs).length > 0) {
+  const allInputs = { ...params.inputs };
+
+  // Auto-include initial-user-input.md if it exists in the workflow dir
+  // (and not already in inputs)
+  const specFilePath = path.join(params.workflowDir, "initial-user-input.md");
+  if (
+    fs.existsSync(specFilePath) &&
+    !Object.prototype.hasOwnProperty.call(allInputs, "initial-user-input.md")
+  ) {
+    allInputs["initial-user-input.md"] = fs.readFileSync(specFilePath, "utf8");
+  }
+
+  if (Object.keys(allInputs).length > 0) {
     sections.push("---\n\n## Input Documents\n");
-    for (const [name, content] of Object.entries(params.inputs)) {
+    for (const [name, content] of Object.entries(allInputs)) {
       sections.push(`### ${name}\n\n${content}\n`);
     }
   }
@@ -53,9 +68,10 @@ export function assemblePrompt(params: AssemblePromptParams): string {
   }
 
   // 5. User task and metadata
+  const outputFile = phaseFileName(params.phaseName, params.phaseIndex);
   sections.push(`---\n\n## User Task\n\n${params.userTask}`);
   sections.push(
-    `\n## Workflow Metadata\n\n- Phase: ${params.phaseName}\n- Workflow: ${path.basename(params.workflowDir)}\n- Output path: ${params.workflowDir}/${params.phaseName}.md\n- TDD: ${params.config.tdd.enabled ? "enabled" : "disabled"}`,
+    `\n## Workflow Metadata\n\n- Phase: ${params.phaseName}\n- Workflow: ${path.basename(params.workflowDir)}\n- Output path: ${params.workflowDir}/${outputFile}\n- TDD: ${params.config.tdd.enabled ? "enabled" : "disabled"}`,
   );
 
   if (params.humanAttended === false) {
@@ -116,12 +132,7 @@ export function resolveSkillPath(
   if (skillRef.startsWith("./")) {
     return path.resolve(process.cwd(), skillRef);
   }
-  return path.join(
-    process.cwd(),
-    config.outputDir,
-    "skills",
-    `${skillRef}.md`,
-  );
+  return path.join(process.cwd(), config.outputDir, "skills", `${skillRef}.md`);
 }
 
 export function resolvePromptPath(
@@ -136,6 +147,15 @@ export function resolvePromptPath(
   );
 }
 
+/**
+ * Resolves input file references to their content.
+ *
+ * Supports both plain filenames (e.g. `analysis.md`) and numbered filenames
+ * (e.g. `01-analysis.md`). When the exact path is not found the function
+ * falls back to any file matching `NN-{basename}.md` in the workflow dir.
+ * This ensures backward compatibility for configs still using `"analysis.md"`
+ * after the numbering feature was introduced.
+ */
 export function resolveInputs(
   input: PhaseConfig["input"],
   workflowDir: string,
@@ -143,9 +163,9 @@ export function resolveInputs(
   if (!input) return {};
 
   if (typeof input === "string") {
-    const filePath = path.join(workflowDir, input);
-    if (fs.existsSync(filePath)) {
-      return { [input]: fs.readFileSync(filePath, "utf8") };
+    const content = resolveOneInput(input, workflowDir);
+    if (content !== null) {
+      return { [input]: content };
     }
     return {};
   }
@@ -153,22 +173,49 @@ export function resolveInputs(
   // Record<string, string>
   const result: Record<string, string> = {};
   for (const [key, fileName] of Object.entries(input)) {
-    const filePath = path.join(workflowDir, fileName);
-    if (fs.existsSync(filePath)) {
-      result[key] = fs.readFileSync(filePath, "utf8");
+    const content = resolveOneInput(fileName, workflowDir);
+    if (content !== null) {
+      result[key] = content;
     }
   }
   return result;
 }
 
-export function loadKnowledge(
-  config: MstackConfig,
-): Record<string, string> {
-  const knowledgeDir = path.join(
-    process.cwd(),
-    config.outputDir,
-    "knowledge",
-  );
+/**
+ * Attempts to read `fileName` from `workflowDir`.
+ * Falls back to a `NN-{stem}.md` numbered variant when exact path is missing.
+ * Returns null if neither exists.
+ */
+function resolveOneInput(fileName: string, workflowDir: string): string | null {
+  // 1. Exact match
+  const exactPath = path.join(workflowDir, fileName);
+  if (fs.existsSync(exactPath)) {
+    return fs.readFileSync(exactPath, "utf8");
+  }
+
+  // 2. Numbered fallback: look for any `NN-{stem}.md` file
+  const stem = path.basename(fileName, ".md");
+  const numberedPattern = new RegExp(`^\\d+-${escapeRegExp(stem)}\\.md$`);
+  let files: string[];
+  try {
+    files = fs.readdirSync(workflowDir);
+  } catch {
+    return null;
+  }
+  const match = files.find((f) => numberedPattern.test(f));
+  if (match) {
+    return fs.readFileSync(path.join(workflowDir, match), "utf8");
+  }
+
+  return null;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function loadKnowledge(config: MstackConfig): Record<string, string> {
+  const knowledgeDir = path.join(process.cwd(), config.outputDir, "knowledge");
   if (!fs.existsSync(knowledgeDir)) return {};
 
   const result: Record<string, string> = {};

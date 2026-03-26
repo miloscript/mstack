@@ -1,0 +1,3 @@
+- currently the output is really basic. It needs to look better.
+- I'm thinking that for some features the whole flow is an overkill, we should be able to define diff workflows for diff features.
+- Even when a mistake is made, there's no clear way, nor skill to tell the agent to write to it's knowledge. For errors which a human noticed.

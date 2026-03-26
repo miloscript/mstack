@@ -11,6 +11,7 @@ import {
   extractUserTask,
   recordUserInput,
   resolveRunInput,
+  writeInitialUserInput,
 } from "../src/utils/workflow-manager.js";
 import type { MstackConfig } from "../src/types.js";
 
@@ -243,6 +244,107 @@ describe("getCompletedPhases", () => {
     expect(phases).toContain("analysis");
     expect(phases).toContain("plan");
     expect(phases).not.toContain("workflow");
+  });
+
+  it("strips numeric prefix from numbered output files", () => {
+    fs.writeFileSync(path.join(tmpDir, "workflow.md"), "root");
+    fs.writeFileSync(path.join(tmpDir, "01-analysis.md"), "done");
+    fs.writeFileSync(path.join(tmpDir, "02-plan.md"), "done");
+
+    const phases = getCompletedPhases(tmpDir);
+    expect(phases).toContain("analysis");
+    expect(phases).toContain("plan");
+    expect(phases).not.toContain("01-analysis");
+    expect(phases).not.toContain("02-plan");
+  });
+
+  it("excludes initial-user-input.md from completed phases", () => {
+    fs.writeFileSync(path.join(tmpDir, "workflow.md"), "root");
+    fs.writeFileSync(path.join(tmpDir, "initial-user-input.md"), "user task");
+    fs.writeFileSync(path.join(tmpDir, "01-analysis.md"), "done");
+
+    const phases = getCompletedPhases(tmpDir);
+    expect(phases).not.toContain("initial-user-input");
+    expect(phases).toContain("analysis");
+  });
+});
+
+describe("writeInitialUserInput", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(
+      path.join(import.meta.dirname, ".tmp-wfinit-"),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("writes initial-user-input.md to workflow dir", () => {
+    writeInitialUserInput(tmpDir, "Build JWT auth");
+
+    const filePath = path.join(tmpDir, "initial-user-input.md");
+    expect(fs.existsSync(filePath)).toBe(true);
+    const content = fs.readFileSync(filePath, "utf8");
+    expect(content).toBe("Build JWT auth");
+  });
+});
+
+describe("updateWorkflowFinalStatus (extended)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(
+      path.join(import.meta.dirname, ".tmp-wffinal2-"),
+    );
+    const config: MstackConfig = {
+      name: "test",
+      outputDir: ".mstack/",
+      model: "claude-sonnet-4-6",
+      orchestration: "code",
+      phases: {},
+      maxRetries: 2,
+      tdd: { enabled: true },
+    };
+    writeWorkflowRoot(tmpDir, config, "task");
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("updates status to 'shipping'", () => {
+    updateWorkflowFinalStatus(tmpDir, "shipping");
+
+    const content = fs.readFileSync(
+      path.join(tmpDir, "workflow.md"),
+      "utf8",
+    );
+    expect(content).toContain("status: shipping");
+  });
+
+  it("updates status to 'permission-error'", () => {
+    updateWorkflowFinalStatus(tmpDir, "permission-error");
+
+    const content = fs.readFileSync(
+      path.join(tmpDir, "workflow.md"),
+      "utf8",
+    );
+    expect(content).toContain("status: permission-error");
+  });
+
+  it("can transition from shipping to complete", () => {
+    updateWorkflowFinalStatus(tmpDir, "shipping");
+    updateWorkflowFinalStatus(tmpDir, "complete");
+
+    const content = fs.readFileSync(
+      path.join(tmpDir, "workflow.md"),
+      "utf8",
+    );
+    expect(content).toContain("status: complete");
+    expect(content).not.toContain("status: shipping");
   });
 });
 
