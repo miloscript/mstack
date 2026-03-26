@@ -18,6 +18,13 @@ import {
 import { humanCheckpoint } from "../utils/human-checkpoint.js";
 import { runInteractivePhase } from "./interactive.js";
 
+export function isHumanAttended(phaseConfig: PhaseConfig): boolean {
+  return (
+    (phaseConfig.pre || []).includes("human") ||
+    (phaseConfig.post || []).includes("human")
+  );
+}
+
 export async function runCodeMode(
   config: MstackConfig,
   userTask: string,
@@ -68,6 +75,7 @@ export async function runCodeMode(
     const skill = loadSkill(phaseConfig.skill, phaseConfig.overrides, config);
     const inputs = resolveInputs(phaseConfig.input, workflowDir);
     const knowledge = loadKnowledge(config);
+    const humanAttended = isHumanAttended(phaseConfig);
     const prompt = assemblePrompt({
       universal,
       skill,
@@ -77,6 +85,7 @@ export async function runCodeMode(
       phaseName,
       workflowDir,
       config,
+      humanAttended,
     });
 
     // Spawn headless agent with retries
@@ -98,7 +107,7 @@ export async function runCodeMode(
           phaseConfig.model || config.model,
         );
 
-        result = await runAgent(prompt, phaseConfig, config);
+        result = await runAgent(prompt, phaseConfig, config, humanAttended);
         lastError = null;
         break;
       } catch (err) {
@@ -172,6 +181,7 @@ export async function runAgent(
   prompt: string,
   phaseConfig: PhaseConfig,
   config: MstackConfig,
+  humanAttended = false,
 ): Promise<string> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
 
@@ -181,6 +191,7 @@ export async function runAgent(
       cwd: process.cwd(),
       model: phaseConfig.model || config.model,
       allowedTools: phaseConfig.tools,
+      disallowedTools: humanAttended ? undefined : ["AskUserQuestion"],
       permissionMode: phaseConfig.permissionMode || config.permissionMode || "acceptEdits",
       includePartialMessages: true,
     },

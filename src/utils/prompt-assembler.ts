@@ -11,6 +11,7 @@ export interface AssemblePromptParams {
   phaseName: string;
   workflowDir: string;
   config: MstackConfig;
+  humanAttended?: boolean;
 }
 
 export function assemblePrompt(params: AssemblePromptParams): string {
@@ -56,6 +57,16 @@ export function assemblePrompt(params: AssemblePromptParams): string {
   sections.push(
     `\n## Workflow Metadata\n\n- Phase: ${params.phaseName}\n- Workflow: ${path.basename(params.workflowDir)}\n- Output path: ${params.workflowDir}/${params.phaseName}.md\n- TDD: ${params.config.tdd.enabled ? "enabled" : "disabled"}`,
   );
+
+  if (params.humanAttended === false) {
+    sections.push(
+      `\n## Human Availability\n\nNo human is available during this phase. Do not attempt to ask questions — make reasonable decisions autonomously based on the context provided.`,
+    );
+  } else if (params.humanAttended === true) {
+    sections.push(
+      `\n## Human Availability\n\nA human is available during this phase. Use AskUserQuestion when you need clarification or approval.`,
+    );
+  }
 
   return sections.join("\n\n");
 }

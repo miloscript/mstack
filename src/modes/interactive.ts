@@ -16,7 +16,7 @@ import {
   getCompletedPhases,
 } from "../utils/workflow-manager.js";
 import { humanCheckpoint } from "../utils/human-checkpoint.js";
-import { runAgent } from "./code.js";
+import { runAgent, isHumanAttended } from "./code.js";
 
 /**
  * Run a single phase in interactive mode.
@@ -45,6 +45,7 @@ export async function runInteractivePhase(
   const skill = loadSkill(phaseConfig.skill, phaseConfig.overrides, config);
   const inputs = resolveInputs(phaseConfig.input, workflowDir);
   const knowledge = loadKnowledge(config);
+  const humanAttended = isHumanAttended(phaseConfig);
   const prompt = assemblePrompt({
     universal,
     skill,
@@ -54,6 +55,7 @@ export async function runInteractivePhase(
     phaseName,
     workflowDir,
     config,
+    humanAttended,
   });
 
   let result: string | null = null;
@@ -74,7 +76,7 @@ export async function runInteractivePhase(
         phaseConfig.model || config.model,
       );
 
-      result = await runAgent(prompt, phaseConfig, config);
+      result = await runAgent(prompt, phaseConfig, config, isHumanAttended(phaseConfig));
       lastError = null;
       break;
     } catch (err) {
