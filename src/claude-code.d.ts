@@ -80,6 +80,7 @@ declare module "@anthropic-ai/claude-agent-sdk" {
       delta?: {
         type: "text_delta" | "input_json_delta";
         text?: string;
+        partial_json?: string;
       };
       content_block?: {
         type: "text" | "tool_use";

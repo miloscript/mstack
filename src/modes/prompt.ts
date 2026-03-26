@@ -50,8 +50,8 @@ export async function runPromptMode(
         const event = streamMsg.event;
         if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
           process.stdout.write(event.delta.text);
-        } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta" && event.delta.text) {
-          currentToolInput += event.delta.text;
+        } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta" && event.delta.partial_json) {
+          currentToolInput += event.delta.partial_json;
         } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use" && event.content_block.name) {
           currentTool = event.content_block.name;
           currentToolInput = "";
