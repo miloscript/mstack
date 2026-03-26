@@ -198,26 +198,36 @@ export async function runAgent(
   });
 
   let resultText = "";
-  let currentTool = "";
-  let currentToolInput = "";
+  // Track tool state per context (null = top-level, string = parent tool use id)
+  const toolState = new Map<string, { tool: string; input: string }>();
 
   for await (const message of conversation) {
     switch (message.type) {
       case "stream_event": {
         const streamMsg = message as import("@anthropic-ai/claude-agent-sdk").SDKStreamEvent;
         const event = streamMsg.event;
+        const contextKey = streamMsg.parent_tool_use_id || "root";
+        const isNested = streamMsg.parent_tool_use_id !== null;
+        const indent = isNested ? "    " : "  ";
+
         if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
-          process.stdout.write(event.delta.text);
+          if (!isNested) {
+            process.stdout.write(event.delta.text);
+          }
         } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta" && event.delta.partial_json) {
-          currentToolInput += event.delta.partial_json;
+          const state = toolState.get(contextKey);
+          if (state) {
+            state.input += event.delta.partial_json;
+          }
         } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use" && event.content_block.name) {
-          currentTool = event.content_block.name;
-          currentToolInput = "";
-        } else if (event.type === "content_block_stop" && currentTool) {
-          const summary = formatToolSummary(currentTool, currentToolInput);
-          console.log(`\n  🔧 ${summary}`);
-          currentTool = "";
-          currentToolInput = "";
+          toolState.set(contextKey, { tool: event.content_block.name, input: "" });
+        } else if (event.type === "content_block_stop") {
+          const state = toolState.get(contextKey);
+          if (state) {
+            const summary = formatToolSummary(state.tool, state.input);
+            console.log(`\n${indent}🔧 ${summary}`);
+            toolState.delete(contextKey);
+          }
         }
         break;
       }
