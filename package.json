@@ -1,0 +1,29 @@
+{
+  "name": "mstack",
+  "version": "0.1.0",
+  "description": "Config-driven agentic dev workflow CLI built on Claude Code",
+  "type": "module",
+  "bin": {
+    "mstack": "./dist/bin/mstack.js"
+  },
+  "files": [
+    "dist/",
+    "defaults/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:cov": "vitest --coverage",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.84",
+    "commander": "^12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.4",
+    "vitest": "^2.0"
+  }
+}
