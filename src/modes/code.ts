@@ -182,28 +182,31 @@ export async function runAgent(
       model: phaseConfig.model || config.model,
       allowedTools: phaseConfig.tools,
       permissionMode: phaseConfig.permissionMode || config.permissionMode || "acceptEdits",
+      includePartialMessages: true,
     },
   });
 
   let resultText = "";
+  let currentTool = "";
+  let currentToolInput = "";
 
   for await (const message of conversation) {
     switch (message.type) {
-      case "assistant": {
-        const assistantMsg = message as { type: string; content?: Array<{ type: string; text?: string; name?: string }> };
-        for (const block of assistantMsg.content || []) {
-          if (block.type === "text" && block.text) {
-            process.stdout.write(block.text);
-          } else if (block.type === "tool_use" && block.name) {
-            console.log(`\n  🔧 ${block.name}`);
-          }
-        }
-        break;
-      }
-      case "tool_use_summary": {
-        const summary = message as { type: string; tool_name?: string; summary?: string };
-        if (summary.summary) {
-          console.log(`  ↳ ${summary.tool_name}: ${summary.summary}`);
+      case "stream_event": {
+        const streamMsg = message as import("@anthropic-ai/claude-agent-sdk").SDKStreamEvent;
+        const event = streamMsg.event;
+        if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
+          process.stdout.write(event.delta.text);
+        } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta" && event.delta.text) {
+          currentToolInput += event.delta.text;
+        } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use" && event.content_block.name) {
+          currentTool = event.content_block.name;
+          currentToolInput = "";
+        } else if (event.type === "content_block_stop" && currentTool) {
+          const summary = formatToolSummary(currentTool, currentToolInput);
+          console.log(`\n  🔧 ${summary}`);
+          currentTool = "";
+          currentToolInput = "";
         }
         break;
       }
@@ -258,6 +261,31 @@ async function runHooks(
         );
       }
     }
+  }
+}
+
+export function formatToolSummary(tool: string, rawInput: string): string {
+  try {
+    const input = JSON.parse(rawInput);
+    switch (tool) {
+      case "Write":
+      case "Read":
+        return `${tool} ${input.file_path}`;
+      case "Edit":
+        return `${tool} ${input.file_path}`;
+      case "Bash":
+        return `${tool} $ ${input.command?.length > 80 ? input.command.slice(0, 80) + "…" : input.command}`;
+      case "Glob":
+        return `${tool} ${input.pattern}`;
+      case "Grep":
+        return `${tool} ${input.pattern}${input.path ? ` in ${input.path}` : ""}`;
+      case "Agent":
+        return `${tool} ${input.description || "sub-agent"}`;
+      default:
+        return tool;
+    }
+  } catch {
+    return tool;
   }
 }
 

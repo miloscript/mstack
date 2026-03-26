@@ -11,6 +11,8 @@ declare module "@anthropic-ai/claude-agent-sdk" {
       append?: string;
     };
     maxTurns?: number;
+    /** Enable streaming of partial messages during generation */
+    includePartialMessages?: boolean;
     /** Permission mode for tool approvals:
      *  - "default": prompt user for each tool (SDK default)
      *  - "acceptEdits": auto-approve file operations (Edit, Write, Bash writes)
@@ -71,9 +73,30 @@ declare module "@anthropic-ai/claude-agent-sdk" {
     [key: string]: unknown;
   }
 
+  interface SDKStreamEvent {
+    type: "stream_event";
+    event: {
+      type: "content_block_start" | "content_block_delta" | "content_block_stop" | "message_start" | "message_delta" | "message_stop";
+      delta?: {
+        type: "text_delta" | "input_json_delta";
+        text?: string;
+      };
+      content_block?: {
+        type: "text" | "tool_use";
+        name?: string;
+      };
+      [key: string]: unknown;
+    };
+    parent_tool_use_id: string | null;
+    uuid: string;
+    session_id: string;
+    [key: string]: unknown;
+  }
+
   type SDKMessage =
     | SDKResultMessage
     | SDKAssistantMessage
+    | SDKStreamEvent
     | SDKToolUseSummaryMessage
     | SDKStatusMessage
     | SDKSystemMessage

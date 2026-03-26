@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import type { MstackConfig } from "../types.js";
 import { resolveSkillPath, resolvePromptPath } from "../utils/prompt-assembler.js";
+import { formatToolSummary } from "./code.js";
 
 export async function runPromptMode(
   config: MstackConfig,
@@ -29,26 +30,30 @@ export async function runPromptMode(
       cwd: process.cwd(),
       model: config.model,
       permissionMode: config.permissionMode || "acceptEdits",
+      includePartialMessages: true,
     },
   });
 
+  let currentTool = "";
+  let currentToolInput = "";
+
   for await (const message of conversation) {
     switch (message.type) {
-      case "assistant": {
-        const assistantMsg = message as { type: string; content?: Array<{ type: string; text?: string; name?: string }> };
-        for (const block of assistantMsg.content || []) {
-          if (block.type === "text" && block.text) {
-            process.stdout.write(block.text);
-          } else if (block.type === "tool_use" && block.name) {
-            console.log(`\n  🔧 ${block.name}`);
-          }
-        }
-        break;
-      }
-      case "tool_use_summary": {
-        const summary = message as { type: string; tool_name?: string; summary?: string };
-        if (summary.summary) {
-          console.log(`  ↳ ${summary.tool_name}: ${summary.summary}`);
+      case "stream_event": {
+        const streamMsg = message as import("@anthropic-ai/claude-agent-sdk").SDKStreamEvent;
+        const event = streamMsg.event;
+        if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
+          process.stdout.write(event.delta.text);
+        } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta" && event.delta.text) {
+          currentToolInput += event.delta.text;
+        } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use" && event.content_block.name) {
+          currentTool = event.content_block.name;
+          currentToolInput = "";
+        } else if (event.type === "content_block_stop" && currentTool) {
+          const summary = formatToolSummary(currentTool, currentToolInput);
+          console.log(`\n  🔧 ${summary}`);
+          currentTool = "";
+          currentToolInput = "";
         }
         break;
       }
