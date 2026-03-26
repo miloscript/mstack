@@ -158,22 +158,27 @@ After scaffolding, an **init scan** runs automatically: a Claude agent reads you
 
 ---
 
-### `mstack run <task>`
+### `mstack run [task]`
 
-Start a new workflow for a task described in plain English.
+Start a new workflow for a task described in plain English, from a spec file, or both.
 
 ```bash
 mstack run "add pagination to the users list endpoint"
+mstack run -f spec.md
+mstack run "add pagination" -f spec.md
 mstack run "fix the race condition in the job queue" --mode prompt
 mstack run "migrate from Prisma 4 to Prisma 5" --config ./custom.config.js
 ```
 
 | Option | Description |
 |--------|-------------|
+| `-f, --file <path>` | Path to a spec file whose contents are used as the task prompt |
 | `--mode <mode>` | Override orchestration mode: `code` \| `prompt` \| `interactive` |
 | `--config <path>` | Path to an alternative config file |
 
-Each run creates a timestamped directory under `.mstack/workflows/` (e.g. `2026-03-26-add-pagination-to-the-users-list-endp`) and writes a `workflow.md` tracking phase status in real time.
+When `-f` is supplied alone, the file's contents become the task prompt and the filename (without extension) is used as the workflow title. When both a positional task and `-f` are provided, the task string becomes the title and the file contents are appended to it.
+
+Each run creates a timestamped directory under `.mstack/workflows/` (e.g. `2026-03-26-add-pagination-to-the-users-list-endp`) and writes a `workflow.md` tracking phase status in real time. The workflow document records both the start time (`created`) and end time (`completed`).
 
 ---
 
