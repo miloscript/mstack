@@ -15,13 +15,13 @@ describe("ensurePermissions", () => {
   });
 
   it("creates .claude/settings.local.json when it does not exist", () => {
-    ensurePermissions(["Bash(git:*)", "WebFetch"], tmpDir);
+    ensurePermissions(["Bash(git *)", "WebFetch"], tmpDir);
 
     const settingsPath = path.join(tmpDir, ".claude", "settings.local.json");
     expect(fs.existsSync(settingsPath)).toBe(true);
 
     const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-    expect(settings.permissions.allow).toEqual(["Bash(git:*)", "WebFetch"]);
+    expect(settings.permissions.allow).toEqual(["Bash(git *)", "WebFetch"]);
   });
 
   it("merges into existing settings without removing user entries", () => {
@@ -30,19 +30,19 @@ describe("ensurePermissions", () => {
     fs.writeFileSync(
       path.join(claudeDir, "settings.local.json"),
       JSON.stringify({
-        permissions: { allow: ["Bash(docker:*)", "WebSearch"] },
+        permissions: { allow: ["Bash(docker *)", "WebSearch"] },
       }),
     );
 
-    ensurePermissions(["Bash(git:*)", "WebSearch"], tmpDir);
+    ensurePermissions(["Bash(git *)", "WebSearch"], tmpDir);
 
     const settings = JSON.parse(
       fs.readFileSync(path.join(claudeDir, "settings.local.json"), "utf8"),
     );
     expect(settings.permissions.allow).toEqual([
-      "Bash(docker:*)",
+      "Bash(docker *)",
       "WebSearch",
-      "Bash(git:*)",
+      "Bash(git *)",
     ]);
   });
 
@@ -52,16 +52,16 @@ describe("ensurePermissions", () => {
     fs.writeFileSync(
       path.join(claudeDir, "settings.local.json"),
       JSON.stringify({
-        permissions: { allow: ["Bash(git:*)", "WebFetch"] },
+        permissions: { allow: ["Bash(git *)", "WebFetch"] },
       }),
     );
 
-    ensurePermissions(["Bash(git:*)", "WebFetch"], tmpDir);
+    ensurePermissions(["Bash(git *)", "WebFetch"], tmpDir);
 
     const settings = JSON.parse(
       fs.readFileSync(path.join(claudeDir, "settings.local.json"), "utf8"),
     );
-    expect(settings.permissions.allow).toEqual(["Bash(git:*)", "WebFetch"]);
+    expect(settings.permissions.allow).toEqual(["Bash(git *)", "WebFetch"]);
   });
 
   it("does not write file when nothing needs to be added", () => {
@@ -70,11 +70,11 @@ describe("ensurePermissions", () => {
     const settingsPath = path.join(claudeDir, "settings.local.json");
     fs.writeFileSync(
       settingsPath,
-      JSON.stringify({ permissions: { allow: ["Bash(git:*)"] } }),
+      JSON.stringify({ permissions: { allow: ["Bash(git *)"] } }),
     );
     const mtimeBefore = fs.statSync(settingsPath).mtimeMs;
 
-    ensurePermissions(["Bash(git:*)"], tmpDir);
+    ensurePermissions(["Bash(git *)"], tmpDir);
 
     const mtimeAfter = fs.statSync(settingsPath).mtimeMs;
     expect(mtimeAfter).toBe(mtimeBefore);
@@ -86,19 +86,19 @@ describe("ensurePermissions", () => {
     fs.writeFileSync(
       path.join(claudeDir, "settings.local.json"),
       JSON.stringify({
-        permissions: { allow: ["WebSearch"], deny: ["Bash(rm:*)"] },
+        permissions: { allow: ["WebSearch"], deny: ["Bash(rm *)"] },
         someOtherKey: true,
       }),
     );
 
-    ensurePermissions(["Bash(git:*)"], tmpDir);
+    ensurePermissions(["Bash(git *)"], tmpDir);
 
     const settings = JSON.parse(
       fs.readFileSync(path.join(claudeDir, "settings.local.json"), "utf8"),
     );
     expect(settings.someOtherKey).toBe(true);
-    expect(settings.permissions.deny).toEqual(["Bash(rm:*)"]);
-    expect(settings.permissions.allow).toEqual(["WebSearch", "Bash(git:*)"]);
+    expect(settings.permissions.deny).toEqual(["Bash(rm *)"]);
+    expect(settings.permissions.allow).toEqual(["WebSearch", "Bash(git *)"]);
   });
 
   it("handles empty permissions array as a no-op", () => {
@@ -114,12 +114,12 @@ describe("ensurePermissions", () => {
     const settingsPath = path.join(claudeDir, "settings.local.json");
     fs.writeFileSync(settingsPath, "{ broken json !!!");
 
-    ensurePermissions(["Bash(git:*)"], tmpDir);
+    ensurePermissions(["Bash(git *)"], tmpDir);
 
     // Backup should exist
     expect(fs.existsSync(settingsPath + ".bak")).toBe(true);
     // New settings should be valid
     const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-    expect(settings.permissions.allow).toEqual(["Bash(git:*)"]);
+    expect(settings.permissions.allow).toEqual(["Bash(git *)"]);
   });
 });

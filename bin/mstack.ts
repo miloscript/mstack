@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { Command } from "commander";
 import { loadConfig } from "../src/config.js";
 import { scaffold } from "../src/scaffold.js";
@@ -11,6 +13,7 @@ import {
   generateSlug,
   createWorkflowDir,
   writeWorkflowRoot,
+  resolveRunInput,
 } from "../src/utils/workflow-manager.js";
 
 const program = new Command();
@@ -39,27 +42,37 @@ program
   });
 
 program
-  .command("run <task>")
+  .command("run [task]")
   .description("Start a new workflow")
   .option(
     "--mode <mode>",
     "Override orchestration mode (prompt|code|interactive)",
   )
   .option("--config <path>", "Path to config file")
-  .action(async (task, opts) => {
+  .option("-f, --file <path>", "Path to a spec file whose contents will be used as the task prompt")
+  .action(async (task: string | undefined, opts) => {
     try {
       const config = await loadConfig(opts.config);
       if (opts.mode) config.orchestration = opts.mode;
 
-      const slug = generateSlug(task);
+      let fileContent: string | undefined;
+      let fileStem: string | undefined;
+      if (opts.file) {
+        fileContent = fs.readFileSync(opts.file, "utf8");
+        fileStem = path.basename(opts.file, path.extname(opts.file));
+      }
+
+      const { title, userTask } = resolveRunInput({ task, fileContent, fileStem });
+
+      const slug = generateSlug(title);
       const workflowDir = createWorkflowDir(config, slug);
-      writeWorkflowRoot(workflowDir, config, task);
+      writeWorkflowRoot(workflowDir, config, userTask, title);
 
       console.log(`Workflow: ${slug}`);
       console.log(`Mode: ${config.orchestration}`);
       console.log(`Output: ${workflowDir}\n`);
 
-      await run(config, task, workflowDir);
+      await run(config, userTask, workflowDir);
     } catch (err) {
       console.error(
         `Error: ${err instanceof Error ? err.message : String(err)}`,

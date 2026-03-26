@@ -25,14 +25,21 @@ export function writeWorkflowRoot(
   workflowDir: string,
   config: MstackConfig,
   userTask: string,
+  title?: string,
 ): void {
   const slug = path.basename(workflowDir);
+  const heading = title ?? userTask;
   const doc = `---
 workflow: ${slug}
 created: ${new Date().toISOString()}
 status: in-progress
+completed:
 ---
-# Workflow: ${userTask}
+# Workflow: ${heading}
+
+## Task Body
+
+${userTask}
 
 ## Config
 
@@ -77,6 +84,7 @@ export function updateWorkflowFinalStatus(
   const workflowPath = path.join(workflowDir, "workflow.md");
   let content = fs.readFileSync(workflowPath, "utf8");
   content = content.replace(/status: in-progress/, `status: ${status}`);
+  content = content.replace(/completed:\s*$|completed:\s*(?=\n)/m, `completed: ${new Date().toISOString()}`);
   fs.writeFileSync(workflowPath, content);
 }
 
@@ -104,6 +112,35 @@ export function getCompletedPhases(workflowDir: string): string[] {
 }
 
 export function extractUserTask(workflowMd: string): string {
-  const match = workflowMd.match(/^# Workflow: (.+)$/m);
-  return match ? match[1] : "Unknown task";
+  // Prefer ## Task Body section (new format)
+  // No `m` flag: `$` means end-of-string (safe fallback); `\n## ` terminates at next heading
+  const bodyMatch = workflowMd.match(/## Task Body\n\n([\s\S]*?)(?=\n## |\n---|$)/);
+  if (bodyMatch) return bodyMatch[1].trim();
+  // Fallback: extract from # Workflow: heading (legacy format)
+  const headingMatch = workflowMd.match(/^# Workflow: (.+)$/m);
+  return headingMatch ? headingMatch[1] : "Unknown task";
+}
+
+export function resolveRunInput(opts: {
+  task?: string;
+  fileContent?: string;
+  fileStem?: string;
+}): { title: string; userTask: string } {
+  const { task, fileContent, fileStem } = opts;
+  if (!task && !fileContent) {
+    throw new Error(
+      "Must provide either a task description (-t / positional) or a spec file (-f).",
+    );
+  }
+  if (task && !fileContent) {
+    return { title: task, userTask: task };
+  }
+  if (!task && fileContent) {
+    return { title: fileStem ?? "untitled", userTask: fileContent };
+  }
+  // Both task and fileContent supplied: task becomes title, combined content becomes userTask
+  return {
+    title: task!,
+    userTask: `${task}\n\n${fileContent}`,
+  };
 }

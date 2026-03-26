@@ -14,13 +14,13 @@ const PHASE_DEFAULTS: Partial<PhaseConfig> = {
 const DEFAULT_PERMISSIONS = [
   "WebSearch",
   "WebFetch",
-  "Bash(node:*)",
-  "Bash(npm:*)",
-  "Bash(npx:*)",
-  "Bash(ls:*)",
-  "Bash(find:*)",
-  "Bash(git:*)",
-  "Bash(gh:*)",
+  "Bash(node *)",
+  "Bash(npm *)",
+  "Bash(npx *)",
+  "Bash(ls *)",
+  "Bash(find *)",
+  "Bash(git *)",
+  "Bash(gh *)",
 ];
 
 const CONFIG_DEFAULTS: Partial<MstackConfig> = {

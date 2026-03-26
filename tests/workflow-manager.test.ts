@@ -10,6 +10,7 @@ import {
   getCompletedPhases,
   extractUserTask,
   recordUserInput,
+  resolveRunInput,
 } from "../src/utils/workflow-manager.js";
 import type { MstackConfig } from "../src/types.js";
 
@@ -96,10 +97,13 @@ describe("writeWorkflowRoot", () => {
       "utf8",
     );
     expect(content).toContain("status: in-progress");
+    expect(content).toContain("completed:");
     expect(content).toContain("# Workflow: Add auth");
     expect(content).toContain('"name": "test"');
     expect(content).toContain("## Phase Status");
     expect(content).toContain("## User Inputs");
+    expect(content).toContain("## Task Body");
+    expect(content).toContain("Add auth");
   });
 });
 
@@ -156,8 +160,10 @@ describe("updateWorkflowFinalStatus", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("updates status to complete", () => {
+  it("updates status to complete and stamps completed timestamp", () => {
+    const before = new Date();
     updateWorkflowFinalStatus(tmpDir, "complete");
+    const after = new Date();
 
     const content = fs.readFileSync(
       path.join(tmpDir, "workflow.md"),
@@ -165,6 +171,23 @@ describe("updateWorkflowFinalStatus", () => {
     );
     expect(content).toContain("status: complete");
     expect(content).not.toContain("status: in-progress");
+    const match = content.match(/completed: (.+)/);
+    expect(match).not.toBeNull();
+    const stamped = new Date(match![1].trim());
+    expect(stamped.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(stamped.getTime()).toBeLessThanOrEqual(after.getTime());
+  });
+
+  it("updates status to failed and stamps completed timestamp", () => {
+    updateWorkflowFinalStatus(tmpDir, "failed");
+
+    const content = fs.readFileSync(
+      path.join(tmpDir, "workflow.md"),
+      "utf8",
+    );
+    expect(content).toContain("status: failed");
+    expect(content).not.toContain("status: in-progress");
+    expect(content).toMatch(/completed: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 });
 
@@ -231,5 +254,35 @@ describe("extractUserTask", () => {
 
   it("returns fallback for missing heading", () => {
     expect(extractUserTask("no heading")).toBe("Unknown task");
+  });
+
+  it("prefers Task Body section over heading when present", () => {
+    const md = `---\nworkflow: test\n---\n# Workflow: Short title\n\n## Task Body\n\nThis is a long\nmultiline task\n\n## Config`;
+    expect(extractUserTask(md)).toBe("This is a long\nmultiline task");
+  });
+});
+
+describe("resolveRunInput", () => {
+  it("throws when neither task nor fileContent is provided", () => {
+    expect(() => resolveRunInput({})).toThrow();
+  });
+
+  it("returns task as both title and userTask when only task provided", () => {
+    const result = resolveRunInput({ task: "Add auth" });
+    expect(result.title).toBe("Add auth");
+    expect(result.userTask).toBe("Add auth");
+  });
+
+  it("uses fileStem as title and fileContent as userTask when only file provided", () => {
+    const result = resolveRunInput({ fileContent: "Build a login form", fileStem: "login-spec" });
+    expect(result.title).toBe("login-spec");
+    expect(result.userTask).toBe("Build a login form");
+  });
+
+  it("uses task as title and combines both when task and fileContent are provided", () => {
+    const result = resolveRunInput({ task: "Add auth", fileContent: "Detailed spec here", fileStem: "spec" });
+    expect(result.title).toBe("Add auth");
+    expect(result.userTask).toContain("Add auth");
+    expect(result.userTask).toContain("Detailed spec here");
   });
 });
