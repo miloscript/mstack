@@ -11,6 +11,18 @@ const PHASE_DEFAULTS: Partial<PhaseConfig> = {
   post: [],
 };
 
+const DEFAULT_PERMISSIONS = [
+  "WebSearch",
+  "WebFetch",
+  "Bash(node:*)",
+  "Bash(npm:*)",
+  "Bash(npx:*)",
+  "Bash(ls:*)",
+  "Bash(find:*)",
+  "Bash(git:*)",
+  "Bash(gh:*)",
+];
+
 const CONFIG_DEFAULTS: Partial<MstackConfig> = {
   outputDir: ".mstack/",
   model: "claude-sonnet-4-6",
@@ -18,6 +30,7 @@ const CONFIG_DEFAULTS: Partial<MstackConfig> = {
   permissionMode: "acceptEdits",
   maxRetries: 2,
   tdd: { enabled: true },
+  permissions: DEFAULT_PERMISSIONS,
 };
 
 export async function loadConfig(configPath?: string): Promise<MstackConfig> {

@@ -24,6 +24,13 @@ export interface MstackConfig {
   /** Max retries per phase before stopping — default 2 */
   maxRetries: number;
 
+  /** Bash/tool permission patterns to auto-allow in .claude/settings.local.json
+   *  before running workflows. Each entry is a Claude Code permission pattern,
+   *  e.g. "Bash(git:*)", "WebFetch", "Bash(npm:*)".
+   *  Merged (not replaced) into existing settings so user additions are preserved.
+   */
+  permissions?: string[];
+
   /** TDD settings */
   tdd: {
     enabled: boolean;
